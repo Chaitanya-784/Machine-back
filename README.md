@@ -1,248 +1,176 @@
-🏭 Factory Event Ingestion System
 
-A high-performance, thread-safe backend service designed to ingest machine sensor events from factory equipment and provide real-time statistical reporting.
+# Factory Event Ingestion System
 
-📖 Table of Contents
+> A high-performance, thread-safe backend service designed to ingest machine sensor events from factory equipment and provide real-time statistical reporting.
 
-Architecture
+**Tech Stack:** Java 17 | Spring Boot 3 | H2 Database | Spring Data JPA
 
-Deduplication & Update Logic
+---
 
-Thread Safety
+## 🚀 Quick Start & Run Instructions
 
-Data Model
+Follow these steps to get the application running locally.
 
-Performance Strategy
+### Prerequisites
+* **Java 17** or higher installed.
+* **Maven** installed (or use the provided `mvnw` wrapper).
 
-Tested Scenarios (Edge Cases)
+### Running the Application
+1.  Navigate to the project root directory.
+2.  Run the application using the Maven wrapper:
+    ```bash
+    ./mvnw spring-boot:run
+    ```
+3.  The application will start on **port 8080**.
 
-Setup & Run Instructions
-
-Future Improvements
-
-1. 🏗️ Architecture
-
-The system follows a modular Monolithic architecture designed for simplicity and speed.
-
-1.1 API Layer (EventController)
-
-The entry point. It handles HTTP requests, validates JSON structures, and delegates processing to the Service layer. It ensures strict typing for:
-
-POST /events/batch: Batch ingestion.
-
-GET /stats: Statistical reporting.
-
-1.2 Service Layer (EventService)
-
-The brain of the operation. Responsible for:
-
-Validation: Rejects invalid durations (>6hrs) or future timestamps.
-
-Logic: Handles deduplication and conflict resolution.
-
-Batching: Orchestrates the bulk processing flow.
-
-1.3 Data Layer (MachineEventRepository)
-
-Built on Spring Data JPA with H2 In-Memory Database.
-
-Why H2? It fulfills the requirement to "run locally without installation" while strictly supporting SQL, ACID transactions, and Indexes for performance.
-
-2. 🧠 Deduplication & Update Logic
-
-To handle duplicate transmissions and out-of-order delivery, we utilize a "Bulk Read-Modify-Write" strategy.
-
-The Strategy (3-Phase Process)
-
-Bulk Fetch: Extract all eventIds from the batch and query the DB once. (Reduces N queries to 1).
-
-In-Memory Comparison: Compare incoming events against existing records.
-
-Conflict Resolution:
-
-Scenario
-
-Condition
-
-Action
-
-Duplicate
-
-ID exists + Payload Identical
-
-Ignore (Dedupe)
-
-Newer Data
-
-ID exists + Payload differs + Incoming time is Newer
-
-Update (Last-Write-Wins)
-
-Older Data
-
-ID exists + Payload differs + Incoming time is Older
-
-Ignore (Obsolete)
-
-New Event
-
-ID does not exist
-
-Insert
-
-⚡ Critical Edge Case: Intra-Batch Race Conditions
-
-If a single batch contains multiple updates for the same eventId, a standard loop would fail.
-
-Solution: We maintain a real-time local map during processing. As soon as an event is processed, the map is updated. Subsequent events in the same batch compare themselves against this "live" state.
-
-3. 🛡️ Thread Safety
-
-We enforce safety for concurrent requests at multiple levels:
-
-✅ Database Transactions (@Transactional): The entire batch runs atomically. Isolation levels prevent dirty reads.
-
-✅ Unique Constraints: The database strictly enforces UNIQUE(eventId). Even if application logic fails, the DB rejects duplicate inserts.
-
-✅ Stateless Design: No mutable state is shared between request threads in Java memory.
-
-4. 📊 Data Model
-
-Data is stored in a single optimized table: machine_events.
-
-Field
-
-Type
-
-Description
-
-Index Strategy
-
-eventId
-
-String (PK)
-
-Unique Identifier
-
-Primary Key (O(1) lookups)
-
-machineId
-
-String
-
-Source Machine
-
-Composite Index
-
-eventTime
-
-Timestamp
-
-Sensor Time
-
-Composite Index (Optimizes Range Queries)
-
-receivedTime
-
-Timestamp
-
-Server Receipt Time
-
-Used for Conflict Resolution
-
-duration
-
-Long
-
-Duration (ms)
-
-Metric
-
-defectCount
-
-Integer
-
-Count
-
-Metric
-
-5. 🚀 Performance Strategy
-
-Goal: Process 1,000 events in < 1 second.
-Result: ~120ms (Avg).
-
-Key Optimizations
-
-Eliminating the N+1 Problem:
-
-Naive: Loop 1000 times $\to$ 1000 Select queries.
-
-Optimized: 1 Select (fetch all) + 1 Save (persist all). Reduced DB calls by 99%.
-
-Batch Writes:
-
-Leveraged JPA saveAll() with Hibernate batching to group SQL statements into single network packets.
-
-Database-Side Aggregation:
-
-Stats (Sum, Count) are calculated via native SQL, keeping memory footprint low.
-
-6. ✅ Tested Scenarios & Edge Cases
-
-The system includes a mandatory JUnit test suite covering all 8 requirements:
-
-[Test 1] Identical Duplicates: Silently ignored; DB count unchanged.
-
-[Test 2] Last-Write-Wins: Newer timestamp overwrites older data.
-
-[Test 3] Out-of-Order Data: Older timestamp is discarded.
-
-[Test 4] Invalid Duration: Events < 0 or > 6hrs are rejected.
-
-[Test 5] Future Timestamps: Events > 15mins in future are rejected.
-
-[Test 6] Unknown Defects (-1): Stored as -1, but counted as 0 in Stats aggregation.
-
-[Test 7] Time Boundaries: Strict inclusive-start / exclusive-end logic.
-
-[Test 8] Concurrency: 20 parallel threads verified for race conditions.
-
-7. ⚙️ Setup & Run Instructions
-
-Prerequisites
-
-Java 17+
-
-Maven
-
-Quick Start
-
-Run the App:
-
-./mvnw spring-boot:run
-
-
-Run Tests:
-
+### Running Tests
+To execute the comprehensive test suite (including concurrency and edge-case validation):
+```bash
 ./mvnw test
 
+```
 
-Endpoints
+### Accessing the System
 
-Ingest: POST http://localhost:8080/events/batch
+Once the server is running, you can access the following endpoints:
 
-Stats: GET http://localhost:8080/stats?machineId=M-1&start=...&end=...
+| Feature | Method | URL |
+| --- | --- | --- |
+| **Batch Ingestion** | `POST` | `http://localhost:8080/events/batch` |
+| **Get Stats** | `GET` | `http://localhost:8080/stats?machineId=...&start=...&end=...` |
+| **Top Defects** | `GET` | `http://localhost:8080/stats/top-defect-lines?machineId=...` |
+| **H2 Console** | `GUI` | `http://localhost:8080/h2-console` |
 
-Top Defects: GET http://localhost:8080/stats/top-defect-lines?from=...&to=...
+---
 
-DB Console: http://localhost:8080/h2-console
+## 🏗 Architecture
 
-8. 🔮 Future Improvements
+The system follows a **Modular Monolithic** architecture designed for simplicity, maintainability, and speed.
 
-Asynchronous Processing: Introduce Kafka. The API should acknowledge receipt immediately, while consumers process DB writes in the background to handle bursty traffic.
+### 1. API Layer (`EventController`)
 
-Persistent Storage: Migrate from H2 to TimescaleDB or PostgreSQL for data durability and time-series optimization.
+* **Role:** Entry point for HTTP requests.
+* **Responsibilities:** Handles request mapping, validates JSON input structure/types, and delegates processing to the Service layer. Ensures strictly typed responses.
 
-Caching: Add Redis for the Stats API to cache historical reports.
+### 2. Service Layer (`EventService`)
 
-Validation: Replace manual if checks with Jakarta @BeanValidation annotations.
+* **Role:** Core business logic.
+* **Responsibilities:**
+* **Validation:** Enforces business rules (duration limits, timestamp sanity).
+* **Deduplication:** Identifies previously processed events.
+* **Conflict Resolution:** Implements "Last-Write-Wins" strategy.
+* **Batch Optimization:** Orchestrates bulk processing to minimize DB interaction.
+
+
+
+### 3. Data Layer (`MachineEventRepository`)
+
+* **Role:** Persistence management using Spring Data JPA & H2.
+* **Decision:** **H2 In-Memory Database** was chosen to allow local execution without installation while maintaining ACID compliance and SQL support.
+* **Optimization:** Uses custom JPQL queries for statistical aggregations (grouping, summing) to offload heavy lifting to the database engine.
+
+---
+
+## ⚡ Deduplication & Update Logic
+
+To handle high-frequency sensor networks where duplicates and out-of-order delivery are common, the system uses a **"Bulk Read-Modify-Write"** strategy.
+
+### The Strategy
+
+Instead of processing events one by one (causing N+1 issues), the system processes incoming batches in three phases:
+
+1. **Bulk Fetch:** Extracts unique IDs and retrieves existing DB records in a single query.
+2. **In-Memory Comparison:** Iterates through the batch and compares against existing records.
+3. **Batch Write:** Persists changes in a single transaction.
+
+### Logic Matrix
+
+| Scenario | Condition | Action | Logic Applied |
+| --- | --- | --- | --- |
+| **Duplicate** | ID exists + Payload Identical | **Ignore** | Deduplication |
+| **Newer Data** | ID exists + Payload differs + Incoming time is *Newer* | **Update** | Last-Write-Wins |
+| **Older Data** | ID exists + Payload differs + Incoming time is *Older* | **Ignore** | Obsolete Data Discard |
+| **New Event** | ID does not exist | **Insert** | New Record Creation |
+
+> **Race Condition Handling:** The system maintains a real-time local map during batch processing. If a single batch contains multiple updates for the same ID, subsequent events in that batch compare themselves against the *most recently updated* local state, preventing duplicate key errors.
+
+---
+
+## 🔒 Thread Safety
+
+The system is designed to handle concurrent requests from multiple sensors safely through three layers of defense:
+
+1. **Database Transactions (`@Transactional`)**
+* The entire batch process runs in a single transaction with **Read Committed** isolation.
+* Ensures atomicity: either the whole batch succeeds, or it rolls back.
+
+
+2. **Unique Constraints**
+* The database schema enforces a `UNIQUE` constraint on the `eventId` column.
+* **Safety Net:** Even if application logic fails, the DB rejects duplicate insertions, ensuring strict data consistency.
+
+
+3. **Stateless Design**
+* Service and Controller layers are stateless singletons.
+* No mutable state is shared between threads; each request has its own isolated memory context.
+
+
+
+---
+
+## 📊 Data Model & Performance
+
+### Schema: `machine_events`
+
+* **Event ID (PK):** String-based unique identifier.
+* **Timestamps:**
+* `eventTime`: When the sensor recorded data (used for reporting).
+* `receivedTime`: When the system received data (used for conflict resolution).
+
+
+* **Metrics:** `duration` (ms) and `defect_count` (int).
+
+### Performance Strategies
+
+The system achieves the target of processing **1,000 events in < 1 second** via:
+
+* **Eliminating N+1 Problems:** Reduces DB calls from  (batch size) to 2 (1 Select + 1 Save) per batch.
+* **Batch Writes:** Leverages JPA `saveAll()` and Hibernate optimizations to group Insert/Update statements into single network packets.
+* **Database-Side Aggregation:** Uses SQL `SUM()` and `COUNT()` for reports, avoiding loading thousands of rows into Java memory.
+* **Indexing:**
+* **PK Index:** For  lookups during ingestion.
+* **Composite Index (`machineId` + `eventTime`):** Optimizes Statistics API queries by locating relevant time windows instantly.
+
+
+
+---
+
+## 🧪 Tested Scenarios (Edge Cases)
+
+The system is verified by a comprehensive `EventServiceTest` suite covering these mandatory scenarios:
+
+| # | Scenario | Handling Logic | Result |
+| --- | --- | --- | --- |
+| **1** | **Identical Duplicate** | Detected via `hasSamePayload()`. | Silently ignored; DB row count unchanged. |
+| **2** | **Newer Data Update** | Timestamp conflict detected; incoming is newer. | **Update** performed; fields overwritten. |
+| **3** | **Out-of-Order Data** | Timestamp conflict detected; incoming is older. | **Ignored**; DB state remains unchanged. |
+| **4** | **Invalid Duration** | Duration < 0 or > 6 hours. | Rejected by validation logic. |
+| **5** | **Future Timestamp** | Event time > 15 mins in future. | Rejected to prevent clock sync corruption. |
+| **6** | **Unknown Defect (-1)** | Sensor error sending `-1`. | Stored as raw data, but treated as `0` in Sum calculations. |
+| **7** | **Time Window** | Querying specific start/end times. | Standard inclusive-start / exclusive-end logic applied. |
+| **8** | **Concurrency** | Multiple threads inserting unique events. | ACID transactions ensure final count is exact; no race conditions. |
+
+---
+
+## 🔮 Future Improvements
+
+Given more time, the system would be upgraded for production scale with:
+
+* [ ] **Asynchronous Processing:** Introduce **Apache Kafka** to buffer ingress traffic, allowing the API to acknowledge receipt immediately while consumers process DB writes in the background.
+* [ ] **Persistent Storage:** Migrate from H2 to **PostgreSQL/TimescaleDB** for data durability and better compression of historical time-series data.
+* [ ] **Caching Strategy:** Implement **Redis** for the Statistics API to cache results of immutable past time windows.
+* [ ] **Declarative Validation:** Replace manual checks with Jakarta Bean Validation (`@PastOrPresent`, `@Min`) for cleaner code.
+
+```
+
+```
